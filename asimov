@@ -26,6 +26,10 @@ readonly FILEPATHS=(
     "Carthage ../Cartfile"
     "Pods ../Podfile"
     ".build ../Package.swift"
+    "build ../build.gradle"
+    ".gradle ../build.gradle"
+    "build ../pubspec.yml"
+    ".dart_tool ../pubspec.yml"
 )
 
 # Given a directory path, determine if the corresponding file (relative
@@ -38,10 +42,13 @@ dependency_file_exists() {
 
     while read -r path; do
         safe_filepath_suffix=$(md5 -qs "$(basename "$path")")
-        filename="filepath_${safe_filepath_suffix}"
-        if [ -f "${path}/${!filename}" ]; then
-            echo "$path"
-        fi
+        suffixs="filepath_${safe_filepath_suffix}"
+
+        for filename in ${!suffixs}; do
+            if [ -f "${path}/${filename}" ]; then
+                echo "$path"
+            fi
+        done
     done
 }
 
@@ -69,21 +76,35 @@ n=0
 for i in "${FILEPATHS[@]}"; do
     read -ra parts <<< "$i"
 
-    # Add this folder to the `find` list, allowing a single `find` command to find all
-    if [ "$n" -gt "0" ]; then
-        find_parameters+=(-o)
-    fi
-    find_parameters+=(-name "${parts[0]}" -type d -prune)
-
     # Set up a variable for lookup in dependency_file_exists, using a hashed name
     # to ensure the variable name is valid
     safe_filepath="filepath_$(md5 -qs "${parts[0]}")"
-    declare "$safe_filepath"="${parts[1]}"
+    existed_safe_value=${!safe_filepath}
+
+    if [ -n "$existed_safe_value" ]; then
+        declare "$safe_filepath"="$existed_safe_value ${parts[1]}"
+        echo -e "[$i]\n - $safe_filepath = ${!safe_filepath}, added: $existed_safe_value"
+    else
+        declare "$safe_filepath"="${parts[1]}"
+        echo -e "[$i]\n - $safe_filepath = ${!safe_filepath}"
+
+        # Add this folder to the `find` list, allowing a single `find` command to find all
+        if [ "$n" -gt "0" ]; then
+            find_parameters+=(-o)
+        fi
+    fi
+
+    find_parameters+=(-name "${parts[0]}" -type d -prune)
+
+
+    for filename in ${!safe_filepath}; do
+        echo "file anchor: $filename"
+    done
 
     ((n++))
 done
 
 
-echo -e "\\n\\033[0;36mFinding dependency directories with corresponding definition files...\\033[0m\\n"
+echo -e "\\n\\033[0;36mFinding dependency directories with corresponding definition files($n): ${find_parameters} , ${find_parameters[@]} .\\033[0m\\n"
 
 find "${find_parameters[@]}" | dependency_file_exists | exclude_file
